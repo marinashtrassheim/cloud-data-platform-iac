@@ -24,7 +24,10 @@ The following AWS services are emulated and fully provisioned by Terraform:
 ---
 
 ## 🧠 Architecture
-
+<p align="left">
+  <img src="architecture.png" alt="Architecture" width="700">
+  <br>
+</p>
 
 **Flow:**
 1. `terraform apply` creates all resources inside LocalStack.
@@ -33,6 +36,38 @@ The following AWS services are emulated and fully provisioned by Terraform:
 4. It returns a JSON response – proving the entire IAM → S3 → Lambda chain works.
 
 ---
+
+## 🧩 Key Terraform Resources Explained
+
+### Core Resources
+
+| Resource | Code example | What it does |
+|----------|--------------|----------------|
+| `aws_s3_bucket` | `bucket = "my-data-platform-bucket"` | Creates an S3 bucket named `my-data-platform-bucket` with versioning enabled |
+| `aws_s3_bucket_versioning` | `status = "Enabled"` | Enables versioning to keep history of all file changes |
+| `aws_iam_role` | `assume_role_policy` with `Service = "lambda.amazonaws.com"` | Defines **who** can assume the role (in this case, Lambda service) |
+| `aws_iam_policy` | `Action = ["s3:GetObject", "s3:ListBucket"]` | Defines **what actions** are allowed (read/list from S3) |
+| `aws_iam_role_policy_attachment` | `role = aws_iam_role.lambda_role.name` | Attaches the policy to the role |
+| `aws_lambda_function` | `filename = "lambda.zip"`, `runtime = "python3.9"` | Uploads the Python code and creates the Lambda function |
+
+### Provider Configuration (Critical for LocalStack)
+
+```
+hcl
+provider "aws" {
+  region                      = "us-east-1"
+  access_key                  = "test"           # fake credentials
+  secret_key                  = "test"
+  skip_credentials_validation = true
+  s3_use_path_style           = true             # required for LocalStack
+  
+  endpoints {
+    s3     = "http://localhost:4566"              # redirect to LocalStack
+    iam    = "http://localhost:4566"
+    lambda = "http://localhost:4566"
+  }
+}
+```
 
 ## 🛠 Tech Stack
 
@@ -119,15 +154,6 @@ curl -X POST http://localhost:4566/2015-03-31/functions/s3_file_processor/invoca
 ```
 {"statusCode":200,"body":"{\"message\": \"Lambda applied successfully!\"}"}
 ```
-
-🧩 Key Terraform Resources Explained
-Resource	What it does
-aws_s3_bucket	Creates my-data-platform-bucket with versioning
-aws_iam_role	Defines who can assume the Lambda execution role
-aws_iam_policy	Grants s3:GetObject and s3:ListBucket on the bucket
-aws_lambda_function	Uploads lambda.zip, sets Python runtime and handler
-aws_s3_bucket_notification (optional)	Triggers Lambda on new S3 objects
-All endpoints are redirected to http://localhost:4566 via the provider configuration – no real AWS API calls are ever made.
 
 🧹 Clean Up
 To stop LocalStack and remove all resources:
