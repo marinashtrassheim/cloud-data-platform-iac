@@ -1,5 +1,5 @@
 provider "aws" {
-  region                      = "us-east-1"
+  region                      = var.aws_region
   access_key                  = "test"
   secret_key                  = "test"
   token                       = "test"
@@ -8,23 +8,33 @@ provider "aws" {
   skip_requesting_account_id  = true
   s3_use_path_style           = true
   endpoints {
-    s3 = "http://localhost:4566"
-    iam = "http://localhost:4566"
+    s3     = "http://localhost:4566"
+    iam    = "http://localhost:4566"
     lambda = "http://localhost:4566"
   }
 }
 
+locals {
+  name_prefix = "${var.project_name}-${var.environment}"
+}
+
 resource "aws_s3_bucket" "data_lake" {
-  bucket = "my-data-platform-bucket"
+  bucket = "${local.name_prefix}-data-lake"
 }
 
 resource "aws_lambda_function" "s3_processor" {
   filename         = "lambda.zip"
-  function_name    = "s3_file_processor"
-  role            = aws_iam_role.lambda_role.arn
-  handler         = "index.handler"
-  runtime         = "python3.9"
+  function_name    = "${local.name_prefix}-s3-processor"
+  role             = aws_iam_role.lambda_role.arn
+  handler          = "index.handler"
+  runtime          = "python3.9"
   source_code_hash = filebase64sha256("lambda.zip")
+
+  environment {
+    variables = {
+      BUCKET_NAME = aws_s3_bucket.data_lake.bucket
+    }
+  }
 }
 
 resource "aws_iam_role_policy_attachment" "lambda_logs" {
@@ -39,7 +49,7 @@ resource "aws_s3_bucket_versioning" "versioning" {
   }
 }
 resource "aws_iam_role" "lambda_role" {
-  name = "lambda_s3_role"
+  name = "${local.name_prefix}-lambda-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -56,7 +66,7 @@ resource "aws_iam_role" "lambda_role" {
 }
 
 resource "aws_iam_policy" "s3_read_policy" {
-  name = "s3_read_policy"
+  name = "${local.name_prefix}-s3-read-policy"
 
   policy = jsonencode({
     Version = "2012-10-17"

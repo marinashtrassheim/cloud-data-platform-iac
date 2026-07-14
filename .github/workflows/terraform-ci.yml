@@ -1,0 +1,28 @@
+name: Terraform CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  fmt-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.8.0"
+
+      - name: terraform fmt
+        run: terraform fmt -check -recursive
+
+      - name: Build Lambda package
+        run: cd lambda_function && zip ../lambda.zip index.py
+
+      - name: terraform init
+        run: terraform init -backend=false
+
+      - name: terraform validate
+        run: terraform validate

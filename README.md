@@ -6,7 +6,7 @@
 [![LocalStack](https://img.shields.io/badge/localstack-3.0+-%234E2DD4?logo=localstack)](https://localstack.cloud/)
 [![AWS](https://img.shields.io/badge/aws-emulated-%23FF9900?logo=amazonaws)](https://aws.amazon.com/)
 
-> Production‑ready infrastructure for a serverless data platform, running **fully locally** with a true AWS API emulation.
+> A local, fully-emulated serverless data platform sandbox — for practicing IaC patterns (Terraform + IAM + Lambda + S3) **without any real cloud costs or credentials**.
 
 ---
 
@@ -43,19 +43,29 @@ The following AWS services are emulated and fully provisioned by Terraform:
 
 | Resource | Code example | What it does |
 |----------|--------------|----------------|
-| `aws_s3_bucket` | `bucket = "my-data-platform-bucket"` | Creates an S3 bucket named `my-data-platform-bucket` with versioning enabled |
+| `aws_s3_bucket` | `bucket = "${local.name_prefix}-data-lake"` | Creates an S3 bucket (name derived from `project_name`/`environment` variables) with versioning enabled |
 | `aws_s3_bucket_versioning` | `status = "Enabled"` | Enables versioning to keep history of all file changes |
 | `aws_iam_role` | `assume_role_policy` with `Service = "lambda.amazonaws.com"` | Defines **who** can assume the role (in this case, Lambda service) |
 | `aws_iam_policy` | `Action = ["s3:GetObject", "s3:ListBucket"]` | Defines **what actions** are allowed (read/list from S3) |
 | `aws_iam_role_policy_attachment` | `role = aws_iam_role.lambda_role.name` | Attaches the policy to the role |
-| `aws_lambda_function` | `filename = "lambda.zip"`, `runtime = "python3.9"` | Uploads the Python code and creates the Lambda function |
+| `aws_lambda_function` | `filename = "lambda.zip"`, `runtime = "python3.9"` | Uploads the Python code and creates the Lambda function, which lists the bucket's objects via `boto3` on every invocation |
+
+### Naming & variables
+
+All resource names are derived from `variables.tf` (`project_name`, `environment`, `aws_region`) via a `local.name_prefix`, instead of being hardcoded. Override defaults with `-var` or a `terraform.tfvars` file, e.g.:
+
+```
+terraform apply -var="project_name=my-platform" -var="environment=staging" -auto-approve
+```
+
+See [`outputs.tf`](outputs.tf) for the bucket name, Lambda function name, and IAM role ARN exposed after `apply`.
 
 ### Provider Configuration (Critical for LocalStack)
 
 ```
 hcl
 provider "aws" {
-  region                      = "us-east-1"
+  region                      = var.aws_region   # defaults to "us-east-1"
   access_key                  = "test"           # fake credentials
   secret_key                  = "test"
   skip_credentials_validation = true
@@ -144,15 +154,15 @@ Apply complete! Resources: 5 added, 0 changed, 0 destroyed.
 ### 6️⃣ Invoke the Lambda function
 
 ```
-curl -X POST http://localhost:4566/2015-03-31/functions/s3_file_processor/invocations \
+curl -X POST http://localhost:4566/2015-03-31/functions/cloud-data-platform-dev-s3-processor/invocations \
   -H "Content-Type: application/json" \
   -d '{"test": "hello"}'
 ```
 
-✅ Expected response:
+✅ Expected response — the function actually lists the bucket's contents via `boto3`, proving the IAM → S3 → Lambda chain works end to end:
 
 ```
-{"statusCode":200,"body":"{\"message\": \"Lambda applied successfully!\"}"}
+{"statusCode":200,"body":"{\"message\": \"Lambda applied successfully!\", \"bucket\": \"cloud-data-platform-dev-data-lake\", \"object_count\": 0, \"objects\": []}"}
 ```
 
 🧹 Clean Up
